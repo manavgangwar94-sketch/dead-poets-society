@@ -1,0 +1,22 @@
+:root{
+--bg:#0b0f17;
+--card: rgba(8,12,18,0.75);
+--muted: #9aa6b2;
+--accent-gradient: linear-gradient(90deg,#8b5cf6,#06b6d4);
+}
+
+
+html,body,#root{
+height:100%;
+margin:0;
+font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+background: var(--bg);
+color: #e6eef6;
+-webkit-font-smoothing:antialiased;
+-moz-osx-font-smoothing:grayscale;
+}
+
+
+a { color: #8b5cf6; text-decoration: none; }
+input,textarea,button { font-family: inherit; }
+button { cursor: pointer; }
