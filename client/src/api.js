@@ -1,6 +1,6 @@
 // src/api.js
 // ✅ FIXED: Use /api prefix with explicit base URL
-const API_BASE_URL = "http://localhost:5000/api";
+const API_BASE_URL = "https://dead-poets-society-backend.onrender.com";
 
 export const API = API_BASE_URL;
 
