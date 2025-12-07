@@ -1,4 +1,3 @@
-// src/pages/PostDetail.jsx
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { getPostById, likePost, updatePost, deletePost } from "../api";
@@ -13,6 +12,7 @@ export default function PostDetail() {
   const [error, setError] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({ title: "", content: "", tags: "" });
+  const [isLiked, setIsLiked] = useState(false); // ✅ Track if user liked
 
   useEffect(() => {
     fetchPost();
@@ -24,6 +24,10 @@ export default function PostDetail() {
       const data = await getPostById(postId);
       if (data.post) {
         setPost(data.post);
+        // ✅ Check if user already liked (from localStorage)
+        const likedPosts = JSON.parse(localStorage.getItem('likedPosts') || '[]');
+        setIsLiked(likedPosts.includes(postId));
+        
         setEditForm({
           title: data.post.title,
           content: data.post.message,
@@ -85,11 +89,26 @@ export default function PostDetail() {
       alert("Please login to like posts");
       return;
     }
+    
     try {
-      const action = post.liked ? "unlike" : "like";
+      // ✅ Toggle like/unlike based on current state
+      const action = isLiked ? "unlike" : "like";
       const data = await likePost(postId, action, token);
+      
       if (data.post) {
         setPost(data.post);
+        
+        // ✅ Update localStorage
+        const likedPosts = JSON.parse(localStorage.getItem('likedPosts') || '[]');
+        if (action === "like") {
+          likedPosts.push(postId);
+          setIsLiked(true);
+        } else {
+          const index = likedPosts.indexOf(postId);
+          if (index > -1) likedPosts.splice(index, 1);
+          setIsLiked(false);
+        }
+        localStorage.setItem('likedPosts', JSON.stringify(likedPosts));
       }
     } catch (err) {
       setError("Error liking post: " + err.message);
@@ -149,8 +168,11 @@ export default function PostDetail() {
             )}
 
             <div className="post-actions">
-              <button onClick={handleLike} className="like-button-detail">
-                <span className="like-icon">♡</span>
+              <button 
+                onClick={handleLike} 
+                className={`like-button-detail ${isLiked ? 'liked' : ''}`}
+              >
+                <span className="like-icon">{isLiked ? '♥' : '♡'}</span>
                 <span>{post.likeCount || 0} Likes</span>
               </button>
 

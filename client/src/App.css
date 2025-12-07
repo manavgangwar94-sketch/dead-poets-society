@@ -104,17 +104,18 @@ body {
 }
 
 .hero-section {
-  background: linear-gradient(135deg, rgba(10, 10, 10, 0.95) 0%, rgba(0, 0, 0, 0.95) 100%),
-              url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400"><text x="50%" y="50%" font-size="200" opacity="0.02" fill="%23ffffff" text-anchor="middle" dominant-baseline="middle" font-family="serif">✒</text></svg>');
+  position: relative;
+  min-height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+background-image: url('./hero-bg.jpg');
   background-size: cover;
   background-position: center;
-  padding: 5rem 2rem;
-  text-align: center;
-  border-bottom: 2px solid #1a1a1a;
-  position: relative;
-  overflow: hidden;
+  background-repeat: no-repeat;
 }
 
+/* Dark overlay for readability */
 .hero-section::before {
   content: '';
   position: absolute;
@@ -122,18 +123,17 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  background: radial-gradient(circle at 30% 50%, rgba(255, 255, 255, 0.03) 0%, transparent 50%),
-              radial-gradient(circle at 70% 50%, rgba(200, 200, 200, 0.02) 0%, transparent 50%);
-  pointer-events: none;
+  background: rgba(0, 0, 0, 0.5); /* Adjust 0.5 for transparency */
+  z-index: 1;
 }
 
+/* Keep text on top of overlay */
 .hero-content {
   position: relative;
-  z-index: 1;
-  max-width: 800px;
-  margin: 0 auto;
+  z-index: 2;
+  text-align: center;
+  color: white;
 }
-
 .hero-title {
   font-family: 'Playfair Display', serif;
   font-size: 4rem;
