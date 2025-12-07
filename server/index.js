@@ -12,8 +12,19 @@ import postsRoutes from "./routes/posts.js";
 
 const app = express();
 
-// Middleware
-app.use(cors());
+// ✅ UPDATED CORS Configuration
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'https://dead-poets-society-frontend.vercel.app', // Replace with your actual Vercel URL
+    /\.vercel\.app$/ // Allow all Vercel preview deployments
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
