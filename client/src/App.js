@@ -58,10 +58,10 @@ export default function App() {
               <h3>Dead Poets Society</h3>
               <p>A sanctuary for poets, dreamers, and those who dare to share their verses with the world. Where words dance and hearts speak.</p>
               <div className="social-links">
-                <a href="#" aria-label="Twitter">𝕏</a>
-                <a href="#" aria-label="Instagram">📷</a>
-                <a href="#" aria-label="Facebook">f</a>
-                <a href="#" aria-label="GitHub">⚡</a>
+                <button type="button" aria-label="Twitter">𝕏</button>
+                <button type="button" aria-label="Instagram">📷</button>
+                <button type="button" aria-label="Facebook">f</button>
+                <button type="button" aria-label="GitHub">⚡</button>
               </div>
             </div>
             

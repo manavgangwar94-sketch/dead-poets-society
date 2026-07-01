@@ -6,7 +6,6 @@ export default function PostDetail() {
   const { postId } = useParams();
   const nav = useNavigate();
   const token = localStorage.getItem("token");
-  const currentDisplayName = localStorage.getItem("displayName");
   const currentUserId = localStorage.getItem("userId");
   const [post, setPost] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -16,34 +15,32 @@ export default function PostDetail() {
   const [isLiked, setIsLiked] = useState(false); // ✅ Track if user liked
 
   useEffect(() => {
+    const fetchPost = async () => {
+      try {
+        setLoading(true);
+        const data = await getPostById(postId);
+        if (data.post) {
+          setPost(data.post);
+          const likedPosts = JSON.parse(localStorage.getItem('likedPosts') || '[]');
+          setIsLiked(likedPosts.includes(postId));
+          setEditForm({
+            title: data.post.title,
+            content: data.post.message,
+            tags: data.post.tags?.join(", ") || "",
+          });
+        } else {
+          setError("Post not found");
+        }
+      } catch (err) {
+        setError("Failed to load post");
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchPost();
   }, [postId]);
-
-  async function fetchPost() {
-    try {
-      setLoading(true);
-      const data = await getPostById(postId);
-      if (data.post) {
-        setPost(data.post);
-        // ✅ Check if user already liked (from localStorage)
-        const likedPosts = JSON.parse(localStorage.getItem('likedPosts') || '[]');
-        setIsLiked(likedPosts.includes(postId));
-        
-        setEditForm({
-          title: data.post.title,
-          content: data.post.message,
-          tags: data.post.tags?.join(", ") || "",
-        });
-      } else {
-        setError("Post not found");
-      }
-    } catch (err) {
-      setError("Failed to load post");
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function handleUpdate() {
     try {
