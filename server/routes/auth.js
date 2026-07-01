@@ -1,6 +1,15 @@
 import express from "express";
 import { auth } from "../middleware/auth.js";
 import {
+  validateRegister,
+  validateLogin,
+  validateChangePassword,
+  validateUpdateProfile,
+  handleValidationErrors,
+} from "../middleware/validators.js";
+import {
+  // auth verification and user management controllers
+  // these controllers handle the core logic for user registration login profile managment and the verification of jwt 
   registerUser,
   loginUser,
   getUserProfile,
@@ -9,7 +18,7 @@ import {
   deleteUserAccount,
   verifyToken,
 } from "../controllers/userController.js";
-
+// create an express router instance to define the routes for authetication and 
 const router = express.Router();
 
 /**
@@ -18,7 +27,12 @@ const router = express.Router();
  * Public route
  * Body: { username, email, password }
  */
-router.post("/register", registerUser);
+router.post(
+  "/register",
+  validateRegister,
+  handleValidationErrors,
+  registerUser
+);
 
 /**
  * POST /api/auth/login
@@ -26,7 +40,7 @@ router.post("/register", registerUser);
  * Public route
  * Body: { email, password }
  */
-router.post("/login", loginUser);
+router.post("/login", validateLogin, handleValidationErrors, loginUser);
 
 /**
  * GET /api/auth/profile
@@ -41,7 +55,13 @@ router.get("/profile", auth, getUserProfile);
  * Protected route (requires authentication)
  * Body: { username (optional), email (optional) }
  */
-router.patch("/profile", auth, updateUserProfile);
+router.patch(
+  "/profile",
+  auth,
+  validateUpdateProfile,
+  handleValidationErrors,
+  updateUserProfile
+);
 
 /**
  * PATCH /api/auth/change-password
@@ -49,7 +69,13 @@ router.patch("/profile", auth, updateUserProfile);
  * Protected route (requires authentication)
  * Body: { currentPassword, newPassword }
  */
-router.patch("/change-password", auth, changePassword);
+router.patch(
+  "/change-password",
+  auth,
+  validateChangePassword,
+  handleValidationErrors,
+  changePassword
+);
 
 /**
  * DELETE /api/auth/profile
@@ -66,5 +92,3 @@ router.delete("/profile", auth, deleteUserAccount);
 router.get("/verify", auth, verifyToken);
 
 export default router;
-
-

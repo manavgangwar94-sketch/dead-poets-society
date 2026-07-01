@@ -1,130 +1,179 @@
 import User from "../models/User.js";
-import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { logger } from "../utils/logger.js";
+import { AccountLockedError } from "../middleware/errorHandler.js";
 
 /**
  * CREATE: Register a new user
  * POST /api/auth/register
  * Body: { username, email, password }
  */
-export const registerUser = async (req, res) => {
+export const registerUser = async (req, res, next) => {
   try {
-    const { username, email, password } = req.body;
+    const { displayName, email, password } = req.body;
 
-    // Validate required fields
-    if (!username || !email || !password) {
-      return res.status(400).json({
-        error: "Missing required fields",
-        required: ["username", "email", "password"],
-      });
-    }
+    logger.info("Registration attempt", { email, displayName });
 
-    // Check if user already exists
+    // Check if user already exists (only by email now, displayName not unique)
     const existingUser = await User.findOne({
-      $or: [{ email }, { username }],
+      email,
     });
 
     if (existingUser) {
-      return res.status(400).json({
-        error: existingUser.email === email 
-          ? "Email is already in use" 
-          : "Username is already taken",
+      logger.warn("Registration failed - email already in use", {
+        email,
+        displayName,
       });
+
+      return res.status(400).json({ error: "Email is already in use" });
     }
 
-    // Hash the password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Create new user
+    // Create new user (password will be hashed by pre-save middleware)
     const newUser = await User.create({
-      username,
+      displayName,
       email,
-      password: hashedPassword,
+      password,
     });
 
     // Generate JWT token
     const JWT_SECRET = process.env.JWT_SECRET || "devsecret";
     const token = jwt.sign(
-      { id: newUser._id, username: newUser.username, email: newUser.email },
+      { id: newUser._id, displayName: newUser.displayName, email: newUser.email },
       JWT_SECRET,
-      { expiresIn: "7d" }
+      { expiresIn: "15m" } // Short-lived access token
     );
+
+    logger.security("User registered successfully", {
+      userId: newUser._id,
+      email: newUser.email,
+      displayName: newUser.displayName,
+      ip: req.ip,
+    });
 
     res.status(201).json({
       message: "User registered successfully",
       user: {
         id: newUser._id,
-        username: newUser.username,
+        displayName: newUser.displayName,
         email: newUser.email,
       },
       token,
     });
   } catch (err) {
-    console.error("Register error:", err);
+    logger.error("Registration error", {
+      error: err.message,
+      email: req.body.email,
+      ip: req.ip,
+    });
+
+    // Don't expose internal error details
+    if (err.name === "ValidationError") {
+      return res.status(400).json({
+        error: "Invalid input",
+        details: Object.values(err.errors).map((e) => e.message),
+      });
+    }
+
     res.status(400).json({
       error: "Failed to register user",
-      details: err.message,
     });
   }
 };
 
 /**
- * READ: Login user
+ * READ: Login user with account lockout protection
  * POST /api/auth/login
  * Body: { email, password }
  */
-export const loginUser = async (req, res) => {
+export const loginUser = async (req, res, next) => {
   try {
     const { email, password } = req.body;
+    const ip = req.ip;
 
-    // Validate required fields
-    if (!email || !password) {
-      return res.status(400).json({
-        error: "Missing required fields",
-        required: ["email", "password"],
+    logger.info("Login attempt", { email, ip });
+
+    // Find user by email and select password field
+    const user = await User.findOne({ email }).select("+password +loginAttempts +lockUntil");
+
+    if (!user) {
+      logger.warn("Login failed - user not found", { email, ip });
+      return res.status(401).json({
+        error: "Invalid credentials",
       });
     }
 
-    // Find user by email
-    const user = await User.findOne({ email }).select("+password");
+    // Check if account is locked
+    if (user.isAccountLocked()) {
+      logger.security("Login blocked - account locked", {
+        userId: user._id,
+        email,
+        ip,
+        lockedUntil: user.lockUntil,
+      });
 
-    if (!user) {
-      return res.status(401).json({
-        error: "Invalid credentials",
+      return res.status(423).json({
+        error: "Account locked",
+        message:
+          "Too many failed login attempts. Please try again in 2 hours.",
+        retryAfter: user.lockUntil,
       });
     }
 
     // Compare passwords
-    const isPasswordValid = await bcrypt.compare(password, user.password);
+    const isPasswordValid = await user.comparePassword(password);
 
     if (!isPasswordValid) {
+      // Increment login attempts
+      await user.incLoginAttempts();
+
+      logger.warn("Login failed - invalid password", {
+        userId: user._id,
+        email,
+        ip,
+        attempts: user.loginAttempts + 1,
+      });
+
       return res.status(401).json({
         error: "Invalid credentials",
       });
     }
 
+    // Reset login attempts on successful login
+    await user.resetLoginAttempts();
+
     // Generate JWT token
     const JWT_SECRET = process.env.JWT_SECRET || "devsecret";
     const token = jwt.sign(
-      { id: user._id, username: user.username, email: user.email },
+      { id: user._id, displayName: user.displayName, email: user.email },
       JWT_SECRET,
-      { expiresIn: "7d" }
+      { expiresIn: "15m" } // Short-lived access token
     );
+
+    logger.security("User logged in successfully", {
+      userId: user._id,
+      email,
+      ip,
+      userAgent: req.get("user-agent"),
+    });
 
     res.json({
       message: "Login successful",
       user: {
         id: user._id,
-        username: user.username,
+        displayName: user.displayName,
         email: user.email,
       },
       token,
     });
   } catch (err) {
-    console.error("Login error:", err);
+    logger.error("Login error", {
+      error: err.message,
+      email: req.body.email,
+      ip: req.ip,
+    });
+
     res.status(500).json({
       error: "Failed to login",
-      details: err.message,
     });
   }
 };
@@ -134,38 +183,35 @@ export const loginUser = async (req, res) => {
  * GET /api/auth/profile
  * Requires: Authentication token
  */
-export const getUserProfile = async (req, res) => {
+export const getUserProfile = async (req, res, next) => {
   try {
     const userId = req.user?.id;
-
-    if (!userId) {
-      return res.status(401).json({
-        error: "Unauthorized",
-      });
-    }
 
     const user = await User.findById(userId);
 
     if (!user) {
+      logger.warn("Profile not found", { userId });
       return res.status(404).json({
         error: "User not found",
       });
     }
 
+    logger.debug("Profile retrieved", { userId });
+
     res.json({
       message: "Profile retrieved successfully",
       user: {
         id: user._id,
-        username: user.username,
+        displayName: user.displayName,
         email: user.email,
         createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
       },
     });
   } catch (err) {
-    console.error("Get profile error:", err);
+    logger.error("Get profile error", { error: err.message, userId: req.user?.id });
     res.status(500).json({
       error: "Failed to retrieve profile",
-      details: err.message,
     });
   }
 };
@@ -176,20 +222,14 @@ export const getUserProfile = async (req, res) => {
  * Body: { username (optional), email (optional) }
  * Requires: Authentication token
  */
-export const updateUserProfile = async (req, res) => {
+export const updateUserProfile = async (req, res, next) => {
   try {
     const userId = req.user?.id;
-    const { username, email } = req.body;
-
-    if (!userId) {
-      return res.status(401).json({
-        error: "Unauthorized",
-      });
-    }
+    const { displayName, email } = req.body;
 
     // Prepare update object
     const updateData = {};
-    if (username !== undefined) updateData.username = username;
+    if (displayName !== undefined) updateData.displayName = displayName;
     if (email !== undefined) updateData.email = email;
 
     if (Object.keys(updateData).length === 0) {
@@ -198,22 +238,20 @@ export const updateUserProfile = async (req, res) => {
       });
     }
 
-    // Check if username or email is already taken by another user
-    if (username || email) {
+    // Check if email is already taken by another user
+    if (email) {
       const existingUser = await User.findOne({
-        _id: { $ne: userId }, // Exclude current user
-        $or: [
-          ...(username ? [{ username }] : []),
-          ...(email ? [{ email }] : []),
-        ],
+        _id: { $ne: userId },
+        email,
       });
 
       if (existingUser) {
-        return res.status(400).json({
-          error: existingUser.username === username 
-            ? "Username is already taken" 
-            : "Email is already in use",
+        logger.warn("Profile update failed - email already in use", {
+          userId,
+          field: "email",
         });
+
+        return res.status(400).json({ error: "Email is already in use" });
       }
     }
 
@@ -222,19 +260,34 @@ export const updateUserProfile = async (req, res) => {
       runValidators: true,
     });
 
+    logger.security("Profile updated", {
+      userId,
+      fields: Object.keys(updateData),
+    });
+
     res.json({
       message: "Profile updated successfully",
       user: {
         id: updatedUser._id,
-        username: updatedUser.username,
+        displayName: updatedUser.displayName,
         email: updatedUser.email,
       },
     });
   } catch (err) {
-    console.error("Update profile error:", err);
+    logger.error("Update profile error", {
+      error: err.message,
+      userId: req.user?.id,
+    });
+
+    if (err.name === "ValidationError") {
+      return res.status(400).json({
+        error: "Invalid input",
+        details: Object.values(err.errors).map((e) => e.message),
+      });
+    }
+
     res.status(400).json({
       error: "Failed to update profile",
-      details: err.message,
     });
   }
 };
@@ -245,60 +298,60 @@ export const updateUserProfile = async (req, res) => {
  * Body: { currentPassword, newPassword }
  * Requires: Authentication token
  */
-export const changePassword = async (req, res) => {
+export const changePassword = async (req, res, next) => {
   try {
     const userId = req.user?.id;
     const { currentPassword, newPassword } = req.body;
 
-    if (!userId) {
-      return res.status(401).json({
-        error: "Unauthorized",
-      });
-    }
-
-    if (!currentPassword || !newPassword) {
-      return res.status(400).json({
-        error: "Missing required fields",
-        required: ["currentPassword", "newPassword"],
-      });
-    }
-
-    if (newPassword.length < 6) {
-      return res.status(400).json({
-        error: "New password must be at least 6 characters long",
-      });
-    }
-
     const user = await User.findById(userId).select("+password");
 
     if (!user) {
+      logger.warn("User not found for password change", { userId });
       return res.status(404).json({
         error: "User not found",
       });
     }
 
     // Verify current password
-    const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+    const isPasswordValid = await user.comparePassword(currentPassword);
 
     if (!isPasswordValid) {
+      logger.warn("Password change failed - incorrect current password", {
+        userId,
+      });
+
       return res.status(401).json({
         error: "Current password is incorrect",
       });
     }
 
-    // Hash new password
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    user.password = hashedPassword;
+    // Update password (will be hashed by pre-save middleware)
+    user.password = newPassword;
     await user.save();
+
+    logger.security("Password changed successfully", {
+      userId,
+      ip: req.ip,
+    });
 
     res.json({
       message: "Password changed successfully",
     });
   } catch (err) {
-    console.error("Change password error:", err);
+    logger.error("Change password error", {
+      error: err.message,
+      userId: req.user?.id,
+    });
+
+    if (err.name === "ValidationError") {
+      return res.status(400).json({
+        error: "Invalid password",
+        details: Object.values(err.errors).map((e) => e.message),
+      });
+    }
+
     res.status(500).json({
       error: "Failed to change password",
-      details: err.message,
     });
   }
 };
@@ -308,48 +361,72 @@ export const changePassword = async (req, res) => {
  * DELETE /api/auth/profile
  * Requires: Authentication token
  */
-export const deleteUserAccount = async (req, res) => {
+export const deleteUserAccount = async (req, res, next) => {
   try {
     const userId = req.user?.id;
+    const { password } = req.body; // Require password confirmation for security
 
-    if (!userId) {
-      return res.status(401).json({
-        error: "Unauthorized",
-      });
-    }
-
-    const user = await User.findByIdAndDelete(userId);
+    const user = await User.findById(userId).select("+password");
 
     if (!user) {
+      logger.warn("User not found for deletion", { userId });
       return res.status(404).json({
         error: "User not found",
       });
     }
 
+    // Verify password before deletion (security measure)
+    if (password) {
+      const isPasswordValid = await user.comparePassword(password);
+
+      if (!isPasswordValid) {
+        logger.warn("Account deletion failed - incorrect password", {
+          userId,
+        });
+
+        return res.status(401).json({
+          error: "Password is incorrect",
+        });
+      }
+    }
+
+    await User.findByIdAndDelete(userId);
+
+    logger.security("User account deleted", {
+      userId,
+      email: user.email,
+      ip: req.ip,
+    });
+
     res.json({
       message: "User account deleted successfully",
     });
   } catch (err) {
-    console.error("Delete account error:", err);
+    logger.error("Delete account error", {
+      error: err.message,
+      userId: req.user?.id,
+    });
+
     res.status(500).json({
       error: "Failed to delete account",
-      details: err.message,
     });
   }
 };
 
 /**
- * Verify JWT token
+ * Verify JWT token validity
  * GET /api/auth/verify
  * Requires: Authentication token
  */
-export const verifyToken = async (req, res) => {
+export const verifyToken = async (req, res, next) => {
   try {
     const userId = req.user?.id;
 
-    if (!userId) {
+    const user = await User.findById(userId);
+
+    if (!user) {
       return res.status(401).json({
-        error: "Unauthorized",
+        error: "User not found",
         valid: false,
       });
     }
@@ -359,16 +436,19 @@ export const verifyToken = async (req, res) => {
       valid: true,
       user: {
         id: req.user.id,
-        username: req.user.username,
+        displayName: req.user.displayName,
         email: req.user.email,
       },
     });
   } catch (err) {
-    console.error("Verify token error:", err);
+    logger.error("Token verification error", {
+      error: err.message,
+      userId: req.user?.id,
+    });
+
     res.status(401).json({
       error: "Failed to verify token",
       valid: false,
-      details: err.message,
     });
   }
 };

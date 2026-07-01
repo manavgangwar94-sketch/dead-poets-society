@@ -1,4 +1,6 @@
 import Post from "../models/Post.js";
+import Like from "../models/Like.js";
+import User from "../models/User.js";
 
 /**
  * CREATE: Add a new post to the database
@@ -9,7 +11,7 @@ import Post from "../models/Post.js";
 export const createPost = async (req, res) => {
   try {
     const { title, message, content, tags } = req.body;
-    const creator = req.user?.username || req.user?.email || "Anonymous"; // Get from authenticated user
+    const authorId = req.user?.id;
 
     // Validate required fields
     if (!title || (!message && !content)) {
@@ -22,17 +24,20 @@ export const createPost = async (req, res) => {
     // Use message if provided, otherwise use content
     const postContent = message || content;
 
-    // Create new post
+    // Create new post with author reference
     const newPost = await Post.create({
       title,
       message: postContent,
-      creator,
+      author: authorId,
       tags: tags || [],
     });
 
+    // Populate author info before returning
+    const populatedPost = await newPost.populate("author", "displayName email");
+
     res.status(201).json({
       message: "Post created successfully",
-      post: newPost,
+      post: populatedPost,
     });
   } catch (err) {
     console.error("Create post error:", err);
@@ -56,22 +61,33 @@ export const getPosts = async (req, res) => {
     // Build filter query
     let filterQuery = {};
     if (tags) {
-      // If tags parameter provided, filter posts containing those tags
       filterQuery.tags = { $in: Array.isArray(tags) ? tags : [tags] };
     }
 
-    // Fetch posts with pagination and sorting
+    // Fetch posts with pagination, sorting, and populated author
     const posts = await Post.find(filterQuery)
-      .sort({ createdAt: -1 }) // Most recent first
+      .populate("author", "displayName email")
+      .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
 
     // Get total count for pagination info
     const total = await Post.countDocuments(filterQuery);
 
+    // For each post, count likes
+    const postsWithLikes = await Promise.all(
+      posts.map(async (post) => {
+        const likeCount = await Like.countDocuments({ post: post._id });
+        return {
+          ...post.toObject(),
+          likeCount,
+        };
+      })
+    );
+
     res.json({
       message: "Posts retrieved successfully",
-      posts,
+      posts: postsWithLikes,
       pagination: {
         total,
         page: parseInt(page),
@@ -103,7 +119,7 @@ export const getPostById = async (req, res) => {
       });
     }
 
-    const post = await Post.findById(id);
+    const post = await Post.findById(id).populate("author", "displayName email");
 
     if (!post) {
       return res.status(404).json({
@@ -111,9 +127,15 @@ export const getPostById = async (req, res) => {
       });
     }
 
+    // Count likes for this post
+    const likeCount = await Like.countDocuments({ post: post._id });
+
     res.json({
       message: "Post retrieved successfully",
-      post,
+      post: {
+        ...post.toObject(),
+        likeCount,
+      },
     });
   } catch (err) {
     console.error("Get post by ID error:", err);
@@ -133,6 +155,7 @@ export const updatePost = async (req, res) => {
   try {
     const { id } = req.params;
     const { title, message, tags } = req.body;
+    const userId = req.user?.id;
 
     // Validate MongoDB ObjectId format
     if (!id.match(/^[0-9a-fA-F]{24}$/)) {
@@ -146,6 +169,13 @@ export const updatePost = async (req, res) => {
     if (!existingPost) {
       return res.status(404).json({
         error: "Post not found",
+      });
+    }
+
+    // Check ownership
+    if (existingPost.author.toString() !== userId) {
+      return res.status(403).json({
+        error: "You can only update your own posts",
       });
     }
 
@@ -164,13 +194,19 @@ export const updatePost = async (req, res) => {
 
     // Update the post
     const updatedPost = await Post.findByIdAndUpdate(id, updateData, {
-      new: true, // Return the updated document
-      runValidators: true, // Run schema validators
-    });
+      new: true,
+      runValidators: true,
+    }).populate("author", "displayName email");
+
+    // Count likes
+    const likeCount = await Like.countDocuments({ post: updatedPost._id });
 
     res.json({
       message: "Post updated successfully",
-      post: updatedPost,
+      post: {
+        ...updatedPost.toObject(),
+        likeCount,
+      },
     });
   } catch (err) {
     console.error("Update post error:", err);
@@ -188,6 +224,7 @@ export const updatePost = async (req, res) => {
 export const deletePost = async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user?.id;
 
     // Validate MongoDB ObjectId format
     if (!id.match(/^[0-9a-fA-F]{24}$/)) {
@@ -196,13 +233,26 @@ export const deletePost = async (req, res) => {
       });
     }
 
-    const post = await Post.findByIdAndDelete(id);
+    const post = await Post.findById(id);
 
     if (!post) {
       return res.status(404).json({
         error: "Post not found",
       });
     }
+
+    // Check ownership
+    if (post.author.toString() !== userId) {
+      return res.status(403).json({
+        error: "You can only delete your own posts",
+      });
+    }
+
+    // Delete all likes for this post
+    await Like.deleteMany({ post: id });
+
+    // Delete the post
+    await Post.findByIdAndDelete(id);
 
     res.json({
       message: "Post deleted successfully",
@@ -218,7 +268,7 @@ export const deletePost = async (req, res) => {
 };
 
 /**
- * UPDATE: Like/Unlike a post (increment or decrement likeCount)
+ * UPDATE: Like/Unlike a post
  * PATCH /api/posts/:id/like
  * Body: { action: "like" or "unlike" }
  */
@@ -226,6 +276,7 @@ export const likePost = async (req, res) => {
   try {
     const { id } = req.params;
     const { action } = req.body;
+    const userId = req.user?.id;
 
     // Validate MongoDB ObjectId format
     if (!id.match(/^[0-9a-fA-F]{24}$/)) {
@@ -241,6 +292,7 @@ export const likePost = async (req, res) => {
       });
     }
 
+    // Check if post exists
     const post = await Post.findById(id);
 
     if (!post) {
@@ -249,18 +301,50 @@ export const likePost = async (req, res) => {
       });
     }
 
-    // Update like count
+    // Check if user already liked the post
+    const existingLike = await Like.findOne({
+      user: userId,
+      post: id,
+    });
+
     if (action === "like") {
-      post.likeCount += 1;
-    } else {
-      post.likeCount = Math.max(0, post.likeCount - 1); // Prevent negative likes
+      if (existingLike) {
+        return res.status(400).json({
+          error: "You already liked this post",
+        });
+      }
+
+      // Create a new like
+      await Like.create({
+        user: userId,
+        post: id,
+      });
+    } else if (action === "unlike") {
+      if (!existingLike) {
+        return res.status(400).json({
+          error: "You haven't liked this post",
+        });
+      }
+
+      // Delete the like
+      await Like.deleteOne({
+        user: userId,
+        post: id,
+      });
     }
 
-    await post.save();
+    // Get updated like count
+    const likeCount = await Like.countDocuments({ post: id });
+
+    // Get post with populated author
+    const updatedPost = await Post.findById(id).populate("author", "displayName email");
 
     res.json({
       message: `Post ${action}d successfully`,
-      post,
+      post: {
+        ...updatedPost.toObject(),
+        likeCount,
+      },
     });
   } catch (err) {
     console.error("Like post error:", err);
@@ -278,6 +362,14 @@ export const likePost = async (req, res) => {
  */
 export const deleteAllPosts = async (req, res) => {
   try {
+    // Get all post IDs
+    const posts = await Post.find({}, "_id");
+    const postIds = posts.map((p) => p._id);
+
+    // Delete all likes for all posts
+    await Like.deleteMany({ post: { $in: postIds } });
+
+    // Delete all posts
     const result = await Post.deleteMany({});
 
     res.json({

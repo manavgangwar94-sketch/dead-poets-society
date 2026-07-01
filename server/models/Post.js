@@ -29,31 +29,26 @@ const postSchema = new mongoose.Schema(
       trim: true,
       minlength: [10, "Message must be at least 10 characters long"],
     },
-    creator: {
-      type: String,
-      required: [true, "Creator/author name is required"],
-      trim: true,
-      maxlength: [50, "Creator name cannot exceed 50 characters"],
+    author: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: [true, "Author is required"],
+      index: true,
     },
     tags: {
       type: [String],
       default: [],
       validate: {
         validator: function (v) {
-          return v.length <= 5; // Max 5 tags per post
+          return v.length <= 5;
         },
         message: "A post can have maximum 5 tags",
       },
     },
-    likeCount: {
-      type: Number,
-      default: 0,
-      min: [0, "Like count cannot be negative"],
-    },
   },
-  { 
-    timestamps: true, // Automatically add createdAt and updatedAt fields
-    collection: "posts", // Explicit collection name
+  {
+    timestamps: true,
+    collection: "posts",
   }
 );
 

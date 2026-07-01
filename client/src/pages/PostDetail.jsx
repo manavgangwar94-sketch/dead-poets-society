@@ -6,7 +6,8 @@ export default function PostDetail() {
   const { postId } = useParams();
   const nav = useNavigate();
   const token = localStorage.getItem("token");
-  const username = localStorage.getItem("username");
+  const currentDisplayName = localStorage.getItem("displayName");
+  const currentUserId = localStorage.getItem("userId");
   const [post, setPost] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -69,7 +70,8 @@ export default function PostDetail() {
   }
 
   async function handleDelete() {
-    if (post.creator !== username) {
+    // Check if user owns the post by comparing ObjectId
+    if (post.author?._id !== currentUserId) {
       alert("You can only delete your own posts");
       return;
     }
@@ -140,7 +142,7 @@ export default function PostDetail() {
     );
   }
 
-  const isOwner = post.creator === username;
+  const isOwner = post.author?._id === currentUserId;
 
   return (
     <div className="post-detail-container">
@@ -150,7 +152,7 @@ export default function PostDetail() {
             <h1 className="post-title">{post.title}</h1>
             
             <div className="post-meta">
-              <span className="meta-author">By {post.creator}</span>
+              <span className="meta-author">By {post.author?.displayName}</span>
               <span className="meta-divider">•</span>
               <span className="meta-date">{new Date(post.createdAt).toLocaleString()}</span>
             </div>

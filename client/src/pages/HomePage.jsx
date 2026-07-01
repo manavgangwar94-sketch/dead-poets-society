@@ -136,7 +136,7 @@ export default function HomePage() {
                   </Link>
                   
                   <div className="card-meta">
-                    <span className="meta-author">By {p.creator}</span>
+                    <span className="meta-author">By {p.author?.displayName}</span>
                     <span className="meta-divider">•</span>
                     <span className="meta-date">{new Date(p.createdAt).toLocaleDateString()}</span>
                   </div>

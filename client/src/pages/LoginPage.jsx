@@ -22,7 +22,7 @@ export default function LoginPage() {
         console.log("🔐 [Login] Token received:", data.token.substring(0, 20) + "...");
         
         // Use auth helper to store
-        const stored = setAuthToken(data.token, data.user?.username || form.email);
+        const stored = setAuthToken(data.token, data.user?.displayName || form.email);
         
         if (stored) {
           console.log("🔐 [Login] ✅ Successfully authenticated and stored");

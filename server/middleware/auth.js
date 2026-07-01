@@ -37,8 +37,8 @@ export function auth(req, res, next) {
     console.log(`[AUTH] JWT_SECRET first 20 chars: ${JWT_SECRET.substring(0, 20)}`);
     
     const decoded = jwt.verify(token, JWT_SECRET);
-    console.log(`[AUTH] ✅ Token verified for user: ${decoded.username}`);
-    req.user = decoded; // { id, username, email }
+    console.log(`[AUTH] ✅ Token verified for user: ${decoded.displayName}`);
+    req.user = decoded; // { id, displayName, email }
     next();
   } catch (err) {
     console.error(`[AUTH] ❌ Token verification failed: ${err.message}`);

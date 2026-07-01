@@ -4,7 +4,7 @@ import { registerUser } from "../api";
 import { useNavigate, Link } from "react-router-dom";
 
 export default function RegisterPage() {
-  const [form, setForm] = useState({ username: "", email: "", password: "" });
+  const [form, setForm] = useState({ displayName: "", email: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const nav = useNavigate();
@@ -20,13 +20,13 @@ export default function RegisterPage() {
       if (data.token) {
         console.log("✅ [Register] Token received:", data.token.substring(0, 20) + "...");
         
-        // Save token and username
+        // Save token and displayName
         localStorage.setItem("token", data.token);
-        localStorage.setItem("username", data.user?.username || form.username);
+        localStorage.setItem("displayName", data.user?.displayName || form.displayName);
         
         // Verify saved
         console.log("✅ [Register] Token saved:", localStorage.getItem("token")?.substring(0, 20) + "...");
-        console.log("✅ [Register] Username saved:", localStorage.getItem("username"));
+        console.log("✅ [Register] Display name saved:", localStorage.getItem("displayName"));
         
         alert("Welcome to the Dead Poets Society!");
         
@@ -58,12 +58,12 @@ export default function RegisterPage() {
       <div className="flashcard">
         <form onSubmit={onSubmit}>
           <div className="form-group">
-            <label>Username</label>
+            <label>Display Name</label>
             <input
-              name="username"
-              placeholder="Choose your poet name"
-              value={form.username}
-              onChange={e => setForm({ ...form, username: e.target.value })}
+              name="displayName"
+              placeholder="Your display name"
+              value={form.displayName}
+              onChange={e => setForm({ ...form, displayName: e.target.value })}
               required
             />
           </div>
