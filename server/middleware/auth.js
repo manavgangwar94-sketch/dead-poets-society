@@ -47,10 +47,13 @@ export function auth(req, res, next) {
       console.error("[AUTH] 💡 Try registering a new account or logging in again");
     }
     if (err.name === "TokenExpiredError") {
-      return res.status(401).json({
-        error: "Token Expired",
-        message: "Please login again",
-      });
+      console.log("[AUTH] Token expired - client should refresh");
+      return res.status(401)
+        .set("X-Token-Expired", "true")
+        .json({
+          error: "Token Expired",
+          message: "Access token expired. Please refresh.",
+        });
     }
     return res.status(401).json({
       error: "Unauthorized",

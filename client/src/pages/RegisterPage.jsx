@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import { registerUser } from "../api";
 import { useNavigate, Link } from "react-router-dom";
+import { setAuthToken } from "../auth";
 
 export default function RegisterPage() {
   const [form, setForm] = useState({ displayName: "", email: "", password: "" });
@@ -20,20 +21,21 @@ export default function RegisterPage() {
       if (data.token) {
         console.log("✅ [Register] Token received:", data.token.substring(0, 20) + "...");
         
-        // Save token and displayName
-        localStorage.setItem("token", data.token);
-        localStorage.setItem("displayName", data.user?.displayName || form.displayName);
+        // Use auth helper to store
+        const stored = setAuthToken(data.token, data.user?.displayName || form.displayName, data.user?.id);
         
-        // Verify saved
-        console.log("✅ [Register] Token saved:", localStorage.getItem("token")?.substring(0, 20) + "...");
-        console.log("✅ [Register] Display name saved:", localStorage.getItem("displayName"));
-        
-        alert("Welcome to the Dead Poets Society!");
-        
-        // Use setTimeout and navigate instead of location.href
-        setTimeout(() => {
-          window.location.href = "/";
-        }, 100);
+        if (stored) {
+          console.log("✅ [Register] ✅ Successfully authenticated and stored");
+          
+          alert("Welcome to the Dead Poets Society!");
+          
+          // Use setTimeout and navigate
+          setTimeout(() => {
+            nav("/");
+          }, 100);
+        } else {
+          setError("Failed to store authentication token");
+        }
       } else if (data.user || data.message) {
         alert("Registered successfully! Please login");
         nav("/login");

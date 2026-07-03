@@ -1,19 +1,20 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { getPostById, likePost, updatePost, deletePost } from "../api";
+import { getAuthToken, getUserId } from "../auth";
 
 export default function PostDetail() {
   const { postId } = useParams();
   const nav = useNavigate();
-  const token = localStorage.getItem("token");
-  const currentUserId = localStorage.getItem("userId");
+  const token = getAuthToken();
+  const currentUserId = getUserId();
   const [post, setPost] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({ title: "", content: "", tags: "" });
   const [isLiked, setIsLiked] = useState(false); // ✅ Track if user liked
-
+ 
   useEffect(() => {
     const fetchPost = async () => {
       try {

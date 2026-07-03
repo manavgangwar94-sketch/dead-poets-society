@@ -17,6 +17,8 @@ import {
   changePassword,
   deleteUserAccount,
   verifyToken,
+  refreshAccessToken,
+  logoutUser,
 } from "../controllers/userController.js";
 // create an express router instance to define the routes for authetication and 
 const router = express.Router();
@@ -90,5 +92,19 @@ router.delete("/profile", auth, deleteUserAccount);
  * Protected route (requires authentication)
  */
 router.get("/verify", auth, verifyToken);
+
+/**
+ * POST /api/auth/refresh
+ * REFRESH: Refresh access token using refresh token from cookie
+ * Public route (requires refresh token cookie)
+ */
+router.post("/refresh", refreshAccessToken);
+
+/**
+ * POST /api/auth/logout
+ * LOGOUT: Revoke refresh token and clear cookies
+ * Protected route (requires authentication)
+ */
+router.post("/logout", auth, logoutUser);
 
 export default router;

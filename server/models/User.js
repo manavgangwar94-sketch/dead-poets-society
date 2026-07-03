@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { ACCOUNT_SECURITY } from "../utils/constants.js";
 
 /**
@@ -56,6 +57,22 @@ const userSchema = new mongoose.Schema(
       type: String,
       enum: ["user", "moderator", "admin"],
       default: "user",
+    },
+    // Refresh token fields for dual-token authentication
+    refreshTokenHash: {
+      type: String,
+      default: null,
+      select: false, // Don't return in normal queries
+    },
+    refreshTokenExpiresAt: {
+      type: Date,
+      default: null,
+      select: false, // Don't return in normal queries
+    },
+    isRefreshTokenRevoked: {
+      type: Boolean,
+      default: false,
+      select: false, // Don't return in normal queries
     },
   },
   { 
@@ -140,6 +157,77 @@ userSchema.methods.resetLoginAttempts = async function () {
       loginAttempts: 0,
       lockUntil: null,
       lastLogin: new Date(),
+    },
+  });
+};
+
+/**
+ * Method to generate a new refresh token
+ * @param {number} expiresInDays - Token expiration in days (default: 7)
+ * @returns {Object} - { token: string, expiresAt: Date }
+ */
+userSchema.methods.generateRefreshToken = function (expiresInDays = 7) {
+  // Generate a random refresh token using crypto
+  const token = crypto.randomBytes(32).toString("hex");
+  const expiresAt = new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000);
+  
+  return { token, expiresAt };
+};
+
+/**
+ * Method to set and hash refresh token
+ * @param {string} token - Raw refresh token
+ * @param {Date} expiresAt - Expiration date
+ * @returns {Promise} - Update result
+ */
+userSchema.methods.setRefreshToken = async function (token, expiresAt) {
+  // Hash the refresh token like a password
+  const salt = await bcrypt.genSalt(10);
+  const refreshTokenHash = await bcrypt.hash(token, salt);
+  
+  return this.updateOne({
+    $set: {
+      refreshTokenHash,
+      refreshTokenExpiresAt: expiresAt,
+      isRefreshTokenRevoked: false,
+    },
+  });
+};
+
+/**
+ * Method to validate refresh token
+ * @param {string} token - Raw refresh token to validate
+ * @returns {Promise<boolean>} - True if token is valid
+ */
+userSchema.methods.validateRefreshToken = async function (token) {
+  // Check if token is revoked
+  if (this.isRefreshTokenRevoked) {
+    return false;
+  }
+  
+  // Check if token has expired
+  if (!this.refreshTokenExpiresAt || this.refreshTokenExpiresAt < new Date()) {
+    return false;
+  }
+  
+  // Compare token hash
+  if (!this.refreshTokenHash) {
+    return false;
+  }
+  
+  return bcrypt.compare(token, this.refreshTokenHash);
+};
+
+/**
+ * Method to revoke refresh token (logout)
+ * @returns {Promise} - Update result
+ */
+userSchema.methods.revokeRefreshToken = async function () {
+  return this.updateOne({
+    $set: {
+      refreshTokenHash: null,
+      refreshTokenExpiresAt: null,
+      isRefreshTokenRevoked: true,
     },
   });
 };
